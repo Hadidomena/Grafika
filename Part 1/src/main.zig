@@ -1,7 +1,7 @@
 const std = @import("std");
 const Io = std.Io;
 
-const Part_1 = @import("Part_1");
+const Part_1 = @import("root.zig");
 
 pub fn main(init: std.process.Init) !void {
     // Prints to stderr, unbuffered, ignoring potential errors.
@@ -12,8 +12,23 @@ pub fn main(init: std.process.Init) !void {
 
     // Accessing command line arguments:
     const args = try init.minimal.args.toSlice(arena);
-    for (args) |arg| {
-        std.log.info("arg: {s}", .{arg});
+
+    // Ręczne przetwarzanie argumentów
+    var i: usize = 1; // Zaczynamy od 1, bo args[0] to zazwyczaj ścieżka do pliku wykonywalnego
+    while (i < args.len) : (i += 1) {
+        const arg = args[i];
+        if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
+            std.log.info("Wyświetlam ekran pomocy...", .{});
+        } else if (std.mem.eql(u8, arg, "--output") or std.mem.eql(u8, arg, "-o")) {
+            i += 1; // Przechodzimy do następnego argumentu (wartości)
+            if (i < args.len) {
+                std.log.info("Plik wyjściowy ustawiony na: {s}", .{args[i]});
+            } else {
+                std.log.err("Błąd: oczekiwano ścieżki po fladze {s}", .{arg});
+            }
+        } else {
+            std.log.info("Nieznany argument lub flaga pozycyjna: {s}", .{arg});
+        }
     }
 
     // In order to do I/O operations need an `Io` instance.
