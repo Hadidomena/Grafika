@@ -5,3 +5,7 @@ Szkice
 zig-cache/
 zig-out/
 zig-pkg
+
+# Compiled
+*.exe
+*.pdb
