@@ -3,6 +3,10 @@ const Io = std.Io;
 
 const Part_1 = @import("root.zig");
 
+const c = @cImport({
+    @cInclude("raylib.h");
+});
+
 pub fn main(init: std.process.Init) !void {
     // Prints to stderr, unbuffered, ignoring potential errors.
     std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
@@ -41,6 +45,12 @@ test "simple test" {
 
 test "fuzz example" {
     try std.testing.fuzz({}, testOne, .{});
+}
+
+test "raylib integration - gen image (CPU)" {
+    const img = c.GenImageColor(2, 2, c.RAYWHITE);
+    try std.testing.expect(c.IsImageValid(img));
+    c.UnloadImage(img);
 }
 
 fn testOne(context: void, smith: *std.testing.Smith) !void {

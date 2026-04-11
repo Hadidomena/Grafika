@@ -57,30 +57,71 @@ pub fn build(b: *std.Build) void {
     //
     // If neither case applies to you, feel free to delete the declaration you
     // don't need and to put everything under a single module.
+    const root_mod = b.createModule(.{
+        // b.createModule defines a new module just like b.addModule but,
+        // unlike b.addModule, it does not expose the module to consumers of
+        // this package, which is why in this case we don't have to give it a name.
+        .root_source_file = b.path("src/main.zig"),
+        // Target and optimization levels must be explicitly wired in when
+        // defining an executable or library (in the root module), and you
+        // can also hardcode a specific target for an executable or library
+        // definition if desireable (e.g. firmware for embedded devices).
+        .target = target,
+        .optimize = optimize,
+        // List of modules available for import in source files part of the
+        // root module.
+        .imports = &.{
+            // Here "Part_1" is the name you will use in your source code to
+            // import this module (e.g. `@import("Part_1")`). The name is
+            // repeated because you are allowed to rename your imports, which
+            // can be extremely useful in case of collisions (which can happen
+            // importing modules from different packages).
+            .{ .name = "Part_1", .module = mod },
+        },
+    });
+
+    // Configure C interop for raylib installed in C:/raylib/raylib/src
+    // (contains raylib.h and libraylib.a). Adjust paths if your raylib is elsewhere.
+    root_mod.addIncludePath(.{ .cwd_relative = "C:/raylib/raylib/src" });
+    root_mod.addLibraryPath(.{ .cwd_relative = "C:/raylib/raylib/src" });
+    // Prefer static linking of libraylib.a; disable pkg-config lookup on Windows
+    root_mod.linkSystemLibrary("raylib", .{ .use_pkg_config = .no, .preferred_link_mode = std.builtin.LinkMode.static });
+
+    // raylib on Windows depends on several system libraries; add common ones
+    // so the build runner can resolve Win32 and OpenGL symbols when linking.
+    root_mod.linkSystemLibrary("user32", .{ .use_pkg_config = .no });
+    root_mod.linkSystemLibrary("gdi32", .{ .use_pkg_config = .no });
+    root_mod.linkSystemLibrary("opengl32", .{ .use_pkg_config = .no });
+    root_mod.linkSystemLibrary("winmm", .{ .use_pkg_config = .no });
+    root_mod.linkSystemLibrary("shell32", .{ .use_pkg_config = .no });
+    root_mod.linkSystemLibrary("ole32", .{ .use_pkg_config = .no });
+    root_mod.linkSystemLibrary("advapi32", .{ .use_pkg_config = .no });
+    root_mod.linkSystemLibrary("comdlg32", .{ .use_pkg_config = .no });
+    root_mod.linkSystemLibrary("imm32", .{ .use_pkg_config = .no });
+    root_mod.linkSystemLibrary("version", .{ .use_pkg_config = .no });
+    root_mod.linkSystemLibrary("ws2_32", .{ .use_pkg_config = .no });
+    root_mod.linkSystemLibrary("oleaut32", .{ .use_pkg_config = .no });
+    root_mod.linkSystemLibrary("uuid", .{ .use_pkg_config = .no });
+
+    // raylib on Windows depends on several system libraries; add common ones
+    // so the build runner can resolve Win32 and OpenGL symbols when linking.
+    root_mod.linkSystemLibrary("user32", .{ .use_pkg_config = .no });
+    root_mod.linkSystemLibrary("gdi32", .{ .use_pkg_config = .no });
+    root_mod.linkSystemLibrary("opengl32", .{ .use_pkg_config = .no });
+    root_mod.linkSystemLibrary("winmm", .{ .use_pkg_config = .no });
+    root_mod.linkSystemLibrary("shell32", .{ .use_pkg_config = .no });
+    root_mod.linkSystemLibrary("ole32", .{ .use_pkg_config = .no });
+    root_mod.linkSystemLibrary("advapi32", .{ .use_pkg_config = .no });
+    root_mod.linkSystemLibrary("comdlg32", .{ .use_pkg_config = .no });
+    root_mod.linkSystemLibrary("imm32", .{ .use_pkg_config = .no });
+    root_mod.linkSystemLibrary("version", .{ .use_pkg_config = .no });
+    root_mod.linkSystemLibrary("ws2_32", .{ .use_pkg_config = .no });
+    root_mod.linkSystemLibrary("oleaut32", .{ .use_pkg_config = .no });
+    root_mod.linkSystemLibrary("uuid", .{ .use_pkg_config = .no });
+
     const exe = b.addExecutable(.{
         .name = "Part_1",
-        .root_module = b.createModule(.{
-            // b.createModule defines a new module just like b.addModule but,
-            // unlike b.addModule, it does not expose the module to consumers of
-            // this package, which is why in this case we don't have to give it a name.
-            .root_source_file = b.path("src/main.zig"),
-            // Target and optimization levels must be explicitly wired in when
-            // defining an executable or library (in the root module), and you
-            // can also hardcode a specific target for an executable or library
-            // definition if desireable (e.g. firmware for embedded devices).
-            .target = target,
-            .optimize = optimize,
-            // List of modules available for import in source files part of the
-            // root module.
-            .imports = &.{
-                // Here "Part_1" is the name you will use in your source code to
-                // import this module (e.g. `@import("Part_1")`). The name is
-                // repeated because you are allowed to rename your imports, which
-                // can be extremely useful in case of collisions (which can happen
-                // importing modules from different packages).
-                .{ .name = "Part_1", .module = mod },
-            },
-        }),
+        .root_module = root_mod,
     });
 
     // This declares intent for the executable to be installed into the
