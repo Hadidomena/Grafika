@@ -25,7 +25,6 @@ fn isNumberChar(ch: u8) bool {
 fn parseEdges(allocator: std.mem.Allocator, path: []const u8) !std.ArrayList(Edge) {
     var list: std.ArrayList(Edge) = .empty;
 
-    // Use raylib utility to load the file into memory (returns a NUL-terminated C string)
     var path_c = try allocator.alloc(u8, path.len + 1);
     var pi: usize = 0;
     while (pi < path.len) : (pi += 1) path_c[pi] = path[pi];
@@ -35,11 +34,9 @@ fn parseEdges(allocator: std.mem.Allocator, path: []const u8) !std.ArrayList(Edg
         allocator.free(path_c);
         return error.FileNotFound;
     }
-    // compute length and build a slice-like view over the returned C-string
     var len: usize = 0;
     while (raw[len] != 0) len += 1;
     const contents = raw[0..len];
-    // path_c can be freed now
     allocator.free(path_c);
 
     var pos: usize = 0;
@@ -47,9 +44,7 @@ fn parseEdges(allocator: std.mem.Allocator, path: []const u8) !std.ArrayList(Edg
         var nums: [6]f32 = .{ 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
         var count: usize = 0;
 
-        // attempt to read six numbers per line
         while (pos < contents.len and count < nums.len) {
-            // skip until number char
             while (pos < contents.len and !isNumberChar(@as(u8, contents[pos]))) pos += 1;
             if (pos >= contents.len) break;
             const start = pos;
@@ -71,19 +66,16 @@ fn parseEdges(allocator: std.mem.Allocator, path: []const u8) !std.ArrayList(Edg
             try list.append(allocator, e);
         }
 
-        // advance to next line
         while (pos < contents.len and contents[pos] != '\n') pos += 1;
         if (pos < contents.len and contents[pos] == '\n') pos += 1;
     }
 
-    // free the C string loaded by raylib
     c.UnloadFileText(raw);
 
     return list;
 }
 
 fn runRenderer(edges_slice: []const Edge) void {
-    // initialize window
     c.InitWindow(800, 600, "Edge Viewer");
     c.SetTargetFPS(60);
 
@@ -117,7 +109,6 @@ fn runRenderer(edges_slice: []const Edge) void {
 }
 
 pub fn main() !void {
-    // Prints to stderr, unbuffered, ignoring potential errors.
     std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -128,14 +119,13 @@ pub fn main() !void {
     defer std.process.argsFree(arena, args);
 
     var edges_list: std.ArrayList(Edge) = .empty;
-    var edges_slice: []const Edge = &[_]Edge{}; // will be set below
+    var edges_slice: []const Edge = &[_]Edge{};
 
     if (args.len > 1) {
         const path = args[1];
         edges_list = try parseEdges(arena, path);
         edges_slice = edges_list.items;
     } else {
-        // no file provided - create a simple sample (a cube wireframe)
         try edges_list.append(arena, Edge{ .a = Point3{ .x = -1, .y = -1, .z = -1 }, .b = Point3{ .x = 1, .y = -1, .z = -1 } });
         try edges_list.append(arena, Edge{ .a = Point3{ .x = 1, .y = -1, .z = -1 }, .b = Point3{ .x = 1, .y = 1, .z = -1 } });
         try edges_list.append(arena, Edge{ .a = Point3{ .x = 1, .y = 1, .z = -1 }, .b = Point3{ .x = -1, .y = 1, .z = -1 } });
@@ -154,17 +144,15 @@ pub fn main() !void {
         edges_slice = edges_list.items;
     }
 
-    // run the renderer (blocking until window closed)
     runRenderer(edges_slice);
 
-    // cleanup
     edges_list.deinit(arena);
 }
 
 test "simple test" {
     const gpa = std.testing.allocator;
     var list: std.ArrayList(i32) = .empty;
-    defer list.deinit(gpa); // Try commenting this out and see if zig detects the memory leak!
+    defer list.deinit(gpa);
     try list.append(gpa, 42);
     try std.testing.expectEqual(@as(i32, 42), list.pop());
 }
@@ -181,8 +169,6 @@ test "raylib integration - gen image (CPU)" {
 
 fn testOne(context: void, smith: *std.testing.Smith) !void {
     _ = context;
-    // Try passing `--fuzz` to `zig build test` and see if it manages to fail this test case!
-
     const gpa = std.testing.allocator;
     var list: std.ArrayList(u8) = .empty;
     defer list.deinit(gpa);
