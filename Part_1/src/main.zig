@@ -18,6 +18,81 @@ const Edge = struct {
     b: Point3,
 };
 
+const CameraState = struct {
+    pos: Point3,
+    yaw: f32,
+    focal: f32,
+};
+
+const ProjectedPoint = struct {
+    x: i32,
+    y: i32,
+    visible: bool,
+};
+
+fn worldToCamera(p: Point3, cam: CameraState) Point3 {
+    const dx = p.x - cam.pos.x;
+    const dy = p.y - cam.pos.y;
+    const dz = p.z - cam.pos.z;
+    const c_yaw = @cos(cam.yaw);
+    const s_yaw = @sin(cam.yaw);
+
+    return Point3{
+        .x = dx * c_yaw - dz * s_yaw,
+        .y = dy,
+        .z = dx * s_yaw + dz * c_yaw,
+    };
+}
+
+fn projectPoint(p_cam: Point3, width: i32, height: i32, focal: f32) ProjectedPoint {
+    const near: f32 = 0.05;
+    if (p_cam.z <= near) {
+        return .{ .x = 0, .y = 0, .visible = false };
+    }
+
+    const cx = @as(f32, @floatFromInt(width)) * 0.5;
+    const cy = @as(f32, @floatFromInt(height)) * 0.5;
+    const sx = cx + focal * (p_cam.x / p_cam.z);
+    const sy = cy - focal * (p_cam.y / p_cam.z);
+
+    return .{
+        .x = @intFromFloat(sx),
+        .y = @intFromFloat(sy),
+        .visible = true,
+    };
+}
+
+fn addBoxEdges(list: *std.ArrayList(Edge), allocator: std.mem.Allocator, center: Point3, size: Point3) !void {
+    const hx = size.x * 0.5;
+    const hy = size.y * 0.5;
+    const hz = size.z * 0.5;
+
+    const p0 = Point3{ .x = center.x - hx, .y = center.y - hy, .z = center.z - hz };
+    const p1 = Point3{ .x = center.x + hx, .y = center.y - hy, .z = center.z - hz };
+    const p2 = Point3{ .x = center.x + hx, .y = center.y + hy, .z = center.z - hz };
+    const p3 = Point3{ .x = center.x - hx, .y = center.y + hy, .z = center.z - hz };
+
+    const p4 = Point3{ .x = center.x - hx, .y = center.y - hy, .z = center.z + hz };
+    const p5 = Point3{ .x = center.x + hx, .y = center.y - hy, .z = center.z + hz };
+    const p6 = Point3{ .x = center.x + hx, .y = center.y + hy, .z = center.z + hz };
+    const p7 = Point3{ .x = center.x - hx, .y = center.y + hy, .z = center.z + hz };
+
+    try list.append(allocator, .{ .a = p0, .b = p1 });
+    try list.append(allocator, .{ .a = p1, .b = p2 });
+    try list.append(allocator, .{ .a = p2, .b = p3 });
+    try list.append(allocator, .{ .a = p3, .b = p0 });
+
+    try list.append(allocator, .{ .a = p4, .b = p5 });
+    try list.append(allocator, .{ .a = p5, .b = p6 });
+    try list.append(allocator, .{ .a = p6, .b = p7 });
+    try list.append(allocator, .{ .a = p7, .b = p4 });
+
+    try list.append(allocator, .{ .a = p0, .b = p4 });
+    try list.append(allocator, .{ .a = p1, .b = p5 });
+    try list.append(allocator, .{ .a = p2, .b = p6 });
+    try list.append(allocator, .{ .a = p3, .b = p7 });
+}
+
 fn isNumberChar(ch: u8) bool {
     return (ch >= '0' and ch <= '9') or ch == '-' or ch == '+' or ch == '.' or ch == 'e' or ch == 'E';
 }
@@ -76,49 +151,91 @@ fn parseEdges(allocator: std.mem.Allocator, path: []const u8) !std.ArrayList(Edg
 }
 
 fn runRenderer(edges_slice: []const Edge) void {
-    c.InitWindow(800, 600, "Edge Viewer");
+    const screen_w = 800;
+    const screen_h = 600;
+    c.InitWindow(screen_w, screen_h, "Wirtualna Kamera - Wireframe");
     c.SetTargetFPS(60);
-    const move_speed: f32 = 0.2;
+    const move_speed: f32 = 0.15;
+    const turn_speed: f32 = 0.03;
+    const focal_speed: f32 = 3.5;
 
-    var camera: c.Camera3D = .{};
-    camera.position = c.Vector3{ .x = 10.0, .y = 10.0, .z = 10.0 };
-    camera.target = c.Vector3{ .x = 0.0, .y = 0.0, .z = 0.0 };
-    camera.up = c.Vector3{ .x = 0.0, .y = 1.0, .z = 0.0 };
-    camera.fovy = 45.0;
-    camera.projection = c.CAMERA_PERSPECTIVE;
+    var camera = CameraState{
+        .pos = Point3{ .x = 0.0, .y = 0.0, .z = -8.0 },
+        .yaw = 0.0,
+        .focal = 520.0,
+    };
 
     while (!c.WindowShouldClose()) {
         if (c.IsKeyDown(c.KEY_LEFT)) {
-            camera.position.x -= move_speed;
-            camera.target.x -= move_speed;
+            camera.yaw -= turn_speed;
         }
         if (c.IsKeyDown(c.KEY_RIGHT)) {
-            camera.position.x += move_speed;
-            camera.target.x += move_speed;
+            camera.yaw += turn_speed;
+        }
+
+        const forward_x = @sin(camera.yaw);
+        const forward_z = @cos(camera.yaw);
+        const right_x = @cos(camera.yaw);
+        const right_z = -@sin(camera.yaw);
+
+        if (c.IsKeyDown(c.KEY_W)) {
+            camera.pos.x += forward_x * move_speed;
+            camera.pos.z += forward_z * move_speed;
+        }
+        if (c.IsKeyDown(c.KEY_S)) {
+            camera.pos.x -= forward_x * move_speed;
+            camera.pos.z -= forward_z * move_speed;
+        }
+        if (c.IsKeyDown(c.KEY_A)) {
+            camera.pos.x -= right_x * move_speed;
+            camera.pos.z -= right_z * move_speed;
+        }
+        if (c.IsKeyDown(c.KEY_D)) {
+            camera.pos.x += right_x * move_speed;
+            camera.pos.z += right_z * move_speed;
         }
         if (c.IsKeyDown(c.KEY_UP)) {
-            camera.position.z -= move_speed;
-            camera.target.z -= move_speed;
+            camera.pos.y += move_speed;
         }
         if (c.IsKeyDown(c.KEY_DOWN)) {
-            camera.position.z += move_speed;
-            camera.target.z += move_speed;
+            camera.pos.y -= move_speed;
+        }
+
+        if (c.IsKeyDown(c.KEY_Z)) {
+            camera.focal -= focal_speed;
+        }
+        if (c.IsKeyDown(c.KEY_X)) {
+            camera.focal += focal_speed;
+        }
+        if (camera.focal < 80.0) {
+            camera.focal = 80.0;
+        }
+        if (camera.focal > 1200.0) {
+            camera.focal = 1200.0;
         }
 
         c.BeginDrawing();
         c.ClearBackground(c.RAYWHITE);
 
-        c.BeginMode3D(camera);
         for (edges_slice) |edge| {
-            const a = edge.a;
-            const b = edge.b;
-            const va = c.Vector3{ .x = a.x, .y = a.y, .z = a.z };
-            const vb = c.Vector3{ .x = b.x, .y = b.y, .z = b.z };
-            c.DrawLine3D(va, vb, c.BLACK);
-        }
-        c.EndMode3D();
+            const a_cam = worldToCamera(edge.a, camera);
+            const b_cam = worldToCamera(edge.b, camera);
+            const pa = projectPoint(a_cam, screen_w, screen_h, camera.focal);
+            const pb = projectPoint(b_cam, screen_w, screen_h, camera.focal);
 
-        c.DrawText("Edge Viewer (ESC to close)", 10, 10, 20, c.DARKGRAY);
+            if (pa.visible and pb.visible) {
+                c.DrawLine(pa.x, pa.y, pb.x, pb.y, c.BLACK);
+            }
+        }
+
+        c.DrawText("Sterowanie: W/S przod-tyl, A/D prawo-lewo, strzalki gora-dol i obrot, Z/X ogniskowa", 10, 10, 16, c.DARKGRAY);
+        var info_buf: [128]u8 = undefined;
+        const info = std.fmt.bufPrintZ(
+            &info_buf,
+            "Cam: ({d:.2}, {d:.2}, {d:.2}) yaw:{d:.2} f:{d:.1}",
+            .{ camera.pos.x, camera.pos.y, camera.pos.z, camera.yaw, camera.focal },
+        ) catch null;
+        if (info) |text| c.DrawText(text, 10, 34, 16, c.GRAY);
 
         c.EndDrawing();
     }
@@ -140,20 +257,11 @@ pub fn main(init: std.process.Init) !void {
         edges_list = try parseEdges(arena, path);
         edges_slice = edges_list.items;
     } else {
-        try edges_list.append(arena, Edge{ .a = Point3{ .x = -1, .y = -1, .z = -1 }, .b = Point3{ .x = 1, .y = -1, .z = -1 } });
-        try edges_list.append(arena, Edge{ .a = Point3{ .x = 1, .y = -1, .z = -1 }, .b = Point3{ .x = 1, .y = 1, .z = -1 } });
-        try edges_list.append(arena, Edge{ .a = Point3{ .x = 1, .y = 1, .z = -1 }, .b = Point3{ .x = -1, .y = 1, .z = -1 } });
-        try edges_list.append(arena, Edge{ .a = Point3{ .x = -1, .y = 1, .z = -1 }, .b = Point3{ .x = -1, .y = -1, .z = -1 } });
-
-        try edges_list.append(arena, Edge{ .a = Point3{ .x = -1, .y = -1, .z = 1 }, .b = Point3{ .x = 1, .y = -1, .z = 1 } });
-        try edges_list.append(arena, Edge{ .a = Point3{ .x = 1, .y = -1, .z = 1 }, .b = Point3{ .x = 1, .y = 1, .z = 1 } });
-        try edges_list.append(arena, Edge{ .a = Point3{ .x = 1, .y = 1, .z = 1 }, .b = Point3{ .x = -1, .y = 1, .z = 1 } });
-        try edges_list.append(arena, Edge{ .a = Point3{ .x = -1, .y = 1, .z = 1 }, .b = Point3{ .x = -1, .y = -1, .z = 1 } });
-
-        try edges_list.append(arena, Edge{ .a = Point3{ .x = -1, .y = -1, .z = -1 }, .b = Point3{ .x = -1, .y = -1, .z = 1 } });
-        try edges_list.append(arena, Edge{ .a = Point3{ .x = 1, .y = -1, .z = -1 }, .b = Point3{ .x = 1, .y = -1, .z = 1 } });
-        try edges_list.append(arena, Edge{ .a = Point3{ .x = 1, .y = 1, .z = -1 }, .b = Point3{ .x = 1, .y = 1, .z = 1 } });
-        try edges_list.append(arena, Edge{ .a = Point3{ .x = -1, .y = 1, .z = -1 }, .b = Point3{ .x = -1, .y = 1, .z = 1 } });
+        const box_size = Point3{ .x = 1.8, .y = 1.8, .z = 1.8 };
+        try addBoxEdges(&edges_list, arena, Point3{ .x = -3.2, .y = 0.0, .z = 0.0 }, box_size);
+        try addBoxEdges(&edges_list, arena, Point3{ .x = 3.2, .y = 0.0, .z = 0.0 }, box_size);
+        try addBoxEdges(&edges_list, arena, Point3{ .x = 0.0, .y = 0.0, .z = -3.2 }, box_size);
+        try addBoxEdges(&edges_list, arena, Point3{ .x = 0.0, .y = 0.0, .z = 3.2 }, box_size);
 
         edges_slice = edges_list.items;
     }
