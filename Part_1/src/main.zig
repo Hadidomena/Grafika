@@ -78,6 +78,7 @@ fn parseEdges(allocator: std.mem.Allocator, path: []const u8) !std.ArrayList(Edg
 fn runRenderer(edges_slice: []const Edge) void {
     c.InitWindow(800, 600, "Edge Viewer");
     c.SetTargetFPS(60);
+    const move_speed: f32 = 0.2;
 
     var camera: c.Camera3D = .{};
     camera.position = c.Vector3{ .x = 10.0, .y = 10.0, .z = 10.0 };
@@ -87,6 +88,23 @@ fn runRenderer(edges_slice: []const Edge) void {
     camera.projection = c.CAMERA_PERSPECTIVE;
 
     while (!c.WindowShouldClose()) {
+        if (c.IsKeyDown(c.KEY_LEFT)) {
+            camera.position.x -= move_speed;
+            camera.target.x -= move_speed;
+        }
+        if (c.IsKeyDown(c.KEY_RIGHT)) {
+            camera.position.x += move_speed;
+            camera.target.x += move_speed;
+        }
+        if (c.IsKeyDown(c.KEY_UP)) {
+            camera.position.z -= move_speed;
+            camera.target.z -= move_speed;
+        }
+        if (c.IsKeyDown(c.KEY_DOWN)) {
+            camera.position.z += move_speed;
+            camera.target.z += move_speed;
+        }
+
         c.BeginDrawing();
         c.ClearBackground(c.RAYWHITE);
 
