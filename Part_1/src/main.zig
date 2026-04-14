@@ -37,12 +37,10 @@ fn worldToCamera(p: Point3, cam: CameraState) Point3 {
     const c_yaw = @cos(cam.yaw);
     const s_yaw = @sin(cam.yaw);
 
-    // rotate around Y (yaw)
     const x1 = dx * c_yaw - dz * s_yaw;
     const y1 = dy;
     const z1 = dx * s_yaw + dz * c_yaw;
 
-    // rotate around X (pitch)
     const c_pitch = @cos(cam.pitch);
     const s_pitch = @sin(cam.pitch);
     const x2 = x1;
