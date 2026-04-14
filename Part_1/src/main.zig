@@ -21,6 +21,7 @@ const Edge = struct {
 const CameraState = struct {
     pos: Point3,
     yaw: f32,
+    pitch: f32,
     focal: f32,
 };
 
@@ -37,11 +38,19 @@ fn worldToCamera(p: Point3, cam: CameraState) Point3 {
     const c_yaw = @cos(cam.yaw);
     const s_yaw = @sin(cam.yaw);
 
-    return Point3{
-        .x = dx * c_yaw - dz * s_yaw,
-        .y = dy,
-        .z = dx * s_yaw + dz * c_yaw,
-    };
+    // rotate around Y (yaw)
+    const x1 = dx * c_yaw - dz * s_yaw;
+    const y1 = dy;
+    const z1 = dx * s_yaw + dz * c_yaw;
+
+    // rotate around X (pitch)
+    const c_pitch = @cos(cam.pitch);
+    const s_pitch = @sin(cam.pitch);
+    const x2 = x1;
+    const y2 = y1 * c_pitch - z1 * s_pitch;
+    const z2 = y1 * s_pitch + z1 * c_pitch;
+
+    return Point3{ .x = x2, .y = y2, .z = z2 };
 }
 
 fn projectPoint(p_cam: Point3, width: i32, height: i32, focal: f32) ProjectedPoint {
@@ -162,6 +171,7 @@ fn runRenderer(edges_slice: []const Edge) void {
     var camera = CameraState{
         .pos = Point3{ .x = 0.0, .y = 0.0, .z = -8.0 },
         .yaw = 0.0,
+        .pitch = 0.0,
         .focal = 520.0,
     };
 
@@ -200,6 +210,16 @@ fn runRenderer(edges_slice: []const Edge) void {
         if (c.IsKeyDown(c.KEY_E)) {
             camera.pos.y -= move_speed;
         }
+        if (c.IsKeyDown(c.KEY_UP)) {
+            camera.pitch += turn_speed;
+        }
+        if (c.IsKeyDown(c.KEY_DOWN)) {
+            camera.pitch -= turn_speed;
+        }
+
+        const max_pitch: f32 = 1.4;
+        if (camera.pitch > max_pitch) camera.pitch = max_pitch;
+        if (camera.pitch < -max_pitch) camera.pitch = -max_pitch;
 
         if (c.IsKeyDown(c.KEY_Z)) {
             camera.focal -= focal_speed;
@@ -232,8 +252,8 @@ fn runRenderer(edges_slice: []const Edge) void {
         var info_buf: [128]u8 = undefined;
         const info = std.fmt.bufPrintZ(
             &info_buf,
-            "Cam: ({d:.2}, {d:.2}, {d:.2}) yaw:{d:.2} f:{d:.1}",
-            .{ camera.pos.x, camera.pos.y, camera.pos.z, camera.yaw, camera.focal },
+            "Cam: ({d:.2}, {d:.2}, {d:.2}) yaw:{d:.2} pitch:{d:.2} f:{d:.1}",
+            .{ camera.pos.x, camera.pos.y, camera.pos.z, camera.yaw, camera.pitch, camera.focal },
         ) catch null;
         if (info) |text| c.DrawText(text, 10, 34, 16, c.GRAY);
 
