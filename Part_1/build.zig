@@ -80,44 +80,39 @@ pub fn build(b: *std.Build) void {
         },
     });
 
-    // Configure C interop for raylib installed in C:/raylib/raylib/src
-    // (contains raylib.h and libraylib.a). Adjust paths if your raylib is elsewhere.
-    root_mod.addIncludePath(.{ .cwd_relative = "C:/raylib/raylib/src" });
-    root_mod.addLibraryPath(.{ .cwd_relative = "C:/raylib/raylib/src" });
-    // Prefer static linking of libraylib.a; disable pkg-config lookup on Windows
-    root_mod.linkSystemLibrary("raylib", .{ .use_pkg_config = .no, .preferred_link_mode = std.builtin.LinkMode.static });
+    const raylib_path = b.option([]const u8, "raylib-path", "Path to raylib headers and library") orelse "/home/szp/raylib/raylib/src";
+    root_mod.addIncludePath(.{ .cwd_relative = raylib_path });
+    root_mod.addLibraryPath(.{ .cwd_relative = raylib_path });
+    root_mod.linkSystemLibrary("raylib", .{ .use_pkg_config = .no, .preferred_link_mode = .static });
 
-    // raylib on Windows depends on several system libraries; add common ones
-    // so the build runner can resolve Win32 and OpenGL symbols when linking.
-    root_mod.linkSystemLibrary("user32", .{ .use_pkg_config = .no });
-    root_mod.linkSystemLibrary("gdi32", .{ .use_pkg_config = .no });
-    root_mod.linkSystemLibrary("opengl32", .{ .use_pkg_config = .no });
-    root_mod.linkSystemLibrary("winmm", .{ .use_pkg_config = .no });
-    root_mod.linkSystemLibrary("shell32", .{ .use_pkg_config = .no });
-    root_mod.linkSystemLibrary("ole32", .{ .use_pkg_config = .no });
-    root_mod.linkSystemLibrary("advapi32", .{ .use_pkg_config = .no });
-    root_mod.linkSystemLibrary("comdlg32", .{ .use_pkg_config = .no });
-    root_mod.linkSystemLibrary("imm32", .{ .use_pkg_config = .no });
-    root_mod.linkSystemLibrary("version", .{ .use_pkg_config = .no });
-    root_mod.linkSystemLibrary("ws2_32", .{ .use_pkg_config = .no });
-    root_mod.linkSystemLibrary("oleaut32", .{ .use_pkg_config = .no });
-    root_mod.linkSystemLibrary("uuid", .{ .use_pkg_config = .no });
-
-    // raylib on Windows depends on several system libraries; add common ones
-    // so the build runner can resolve Win32 and OpenGL symbols when linking.
-    root_mod.linkSystemLibrary("user32", .{ .use_pkg_config = .no });
-    root_mod.linkSystemLibrary("gdi32", .{ .use_pkg_config = .no });
-    root_mod.linkSystemLibrary("opengl32", .{ .use_pkg_config = .no });
-    root_mod.linkSystemLibrary("winmm", .{ .use_pkg_config = .no });
-    root_mod.linkSystemLibrary("shell32", .{ .use_pkg_config = .no });
-    root_mod.linkSystemLibrary("ole32", .{ .use_pkg_config = .no });
-    root_mod.linkSystemLibrary("advapi32", .{ .use_pkg_config = .no });
-    root_mod.linkSystemLibrary("comdlg32", .{ .use_pkg_config = .no });
-    root_mod.linkSystemLibrary("imm32", .{ .use_pkg_config = .no });
-    root_mod.linkSystemLibrary("version", .{ .use_pkg_config = .no });
-    root_mod.linkSystemLibrary("ws2_32", .{ .use_pkg_config = .no });
-    root_mod.linkSystemLibrary("oleaut32", .{ .use_pkg_config = .no });
-    root_mod.linkSystemLibrary("uuid", .{ .use_pkg_config = .no });
+    const os_tag = target.result.os.tag;
+    if (os_tag == .windows) {
+        root_mod.linkSystemLibrary("user32", .{ .use_pkg_config = .no });
+        root_mod.linkSystemLibrary("gdi32", .{ .use_pkg_config = .no });
+        root_mod.linkSystemLibrary("opengl32", .{ .use_pkg_config = .no });
+        root_mod.linkSystemLibrary("winmm", .{ .use_pkg_config = .no });
+        root_mod.linkSystemLibrary("shell32", .{ .use_pkg_config = .no });
+        root_mod.linkSystemLibrary("ole32", .{ .use_pkg_config = .no });
+        root_mod.linkSystemLibrary("advapi32", .{ .use_pkg_config = .no });
+        root_mod.linkSystemLibrary("comdlg32", .{ .use_pkg_config = .no });
+        root_mod.linkSystemLibrary("imm32", .{ .use_pkg_config = .no });
+        root_mod.linkSystemLibrary("version", .{ .use_pkg_config = .no });
+        root_mod.linkSystemLibrary("ws2_32", .{ .use_pkg_config = .no });
+        root_mod.linkSystemLibrary("oleaut32", .{ .use_pkg_config = .no });
+        root_mod.linkSystemLibrary("uuid", .{ .use_pkg_config = .no });
+    } else if (os_tag == .linux) {
+        root_mod.linkSystemLibrary("m", .{ .use_pkg_config = .no });
+        root_mod.linkSystemLibrary("pthread", .{ .use_pkg_config = .no });
+        root_mod.linkSystemLibrary("dl", .{ .use_pkg_config = .no });
+        root_mod.linkSystemLibrary("rt", .{ .use_pkg_config = .no });
+        root_mod.linkSystemLibrary("GL", .{ .use_pkg_config = .no });
+        root_mod.linkSystemLibrary("X11", .{ .use_pkg_config = .no });
+        root_mod.linkSystemLibrary("Xrandr", .{ .use_pkg_config = .no });
+        root_mod.linkSystemLibrary("Xi", .{ .use_pkg_config = .no });
+        root_mod.linkSystemLibrary("Xxf86vm", .{ .use_pkg_config = .no });
+        root_mod.linkSystemLibrary("Xinerama", .{ .use_pkg_config = .no });
+        root_mod.linkSystemLibrary("Xcursor", .{ .use_pkg_config = .no });
+    }
 
     const exe = b.addExecutable(.{
         .name = "Part_1",
