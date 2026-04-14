@@ -194,10 +194,10 @@ fn runRenderer(edges_slice: []const Edge) void {
             camera.pos.x += right_x * move_speed;
             camera.pos.z += right_z * move_speed;
         }
-        if (c.IsKeyDown(c.KEY_UP)) {
+        if (c.IsKeyDown(c.KEY_Q)) {
             camera.pos.y += move_speed;
         }
-        if (c.IsKeyDown(c.KEY_DOWN)) {
+        if (c.IsKeyDown(c.KEY_E)) {
             camera.pos.y -= move_speed;
         }
 
@@ -244,8 +244,6 @@ fn runRenderer(edges_slice: []const Edge) void {
 }
 
 pub fn main(init: std.process.Init) !void {
-    std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
-
     const arena = init.arena.allocator();
     const args = try init.minimal.args.toSlice(arena);
 
