@@ -1,0 +1,57 @@
+name: Test Project
+
+permissions: read-all
+
+on:
+    push:
+        branches: [ main ]
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    env:
+      RAYLIB_PATH: ${{ github.workspace }}/raylib/src
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v1
+        with:
+          version: 0.16
+
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl-dev libx11-dev libxrandr-dev libxi-dev libxxf86vm-dev libxinerama-dev libxcursor-dev
+
+      - name: Cache Raylib
+        id: cache-raylib
+        uses: actions/cache@v4
+        with:
+          path: raylib
+          key: ${{ runner.os }}-raylib-master
+
+      - name: Copy Raylib
+        if: steps.cache-raylib.outputs.cache-hit != 'true'
+        run: git clone --depth 1 https://github.com/raysan5/raylib.git
+
+      - name: Build Raylib
+        if: steps.cache-raylib.outputs.cache-hit != 'true'
+        run: |
+          cd raylib/src
+          make PLATFORM=PLATFORM_DESKTOP        
+
+      - name: Cache Zig Build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/zig
+            zig-cache
+            zig-out
+          key: ${{ runner.os }}-zig-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-zig-
+
+      - name: Run Tests
+        run: cd Part_1 && zig build test
