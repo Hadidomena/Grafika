@@ -228,7 +228,7 @@ fn runRenderer(edges_slice: []const Edge) void {
             }
         }
 
-        c.DrawText("Sterowanie: W/S przod-tyl, A/D prawo-lewo, strzalki gora-dol i obrot, Z/X ogniskowa", 10, 10, 16, c.DARKGRAY);
+        c.DrawText("Movement: W/S front/back, A/D right/left, arrowkeys to steer camera, Z/X focal", 10, 10, 16, c.DARKGRAY);
         var info_buf: [128]u8 = undefined;
         const info = std.fmt.bufPrintZ(
             &info_buf,
