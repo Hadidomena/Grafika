@@ -7,32 +7,154 @@ const c = @cImport({
     @cInclude("raylib.h");
 });
 
+const Point3 = struct {
+    x: f32,
+    y: f32,
+    z: f32,
+};
+
+const Edge = struct {
+    a: Point3,
+    b: Point3,
+};
+
+fn isNumberChar(ch: u8) bool {
+    return (ch >= '0' and ch <= '9') or ch == '-' or ch == '+' or ch == '.' or ch == 'e' or ch == 'E';
+}
+
+fn parseEdges(allocator: std.mem.Allocator, path: []const u8) !std.ArrayList(Edge) {
+    var list: std.ArrayList(Edge) = .empty;
+
+    // Use raylib utility to load the file into memory (returns a NUL-terminated C string)
+    var path_c = try allocator.alloc(u8, path.len + 1);
+    var pi: usize = 0;
+    while (pi < path.len) : (pi += 1) path_c[pi] = path[pi];
+    path_c[path.len] = 0;
+    const raw = c.LoadFileText(&path_c[0]);
+    if (raw == null) {
+        allocator.free(path_c);
+        return error.FileNotFound;
+    }
+    // compute length and build a slice-like view over the returned C-string
+    var len: usize = 0;
+    while (raw[len] != 0) len += 1;
+    const contents = raw[0..len];
+    // path_c can be freed now
+    allocator.free(path_c);
+
+    var pos: usize = 0;
+    while (pos < contents.len) {
+        var nums: [6]f32 = .{ 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
+        var count: usize = 0;
+
+        // attempt to read six numbers per line
+        while (pos < contents.len and count < nums.len) {
+            // skip until number char
+            while (pos < contents.len and !isNumberChar(@as(u8, contents[pos]))) pos += 1;
+            if (pos >= contents.len) break;
+            const start = pos;
+            pos += 1;
+            while (pos < contents.len and isNumberChar(@as(u8, contents[pos]))) pos += 1;
+            const tok_len = pos - start;
+            var tmp: [64]u8 = undefined;
+            if (tok_len >= tmp.len) return error.FileNotFound;
+            var ti: usize = 0;
+            while (ti < tok_len) : (ti += 1) tmp[ti] = @as(u8, contents[start + ti]);
+            const tok = tmp[0..tok_len];
+            const val = try std.fmt.parseFloat(f32, tok);
+            nums[count] = val;
+            count += 1;
+        }
+
+        if (count == nums.len) {
+            const e = Edge{ .a = Point3{ .x = nums[0], .y = nums[1], .z = nums[2] }, .b = Point3{ .x = nums[3], .y = nums[4], .z = nums[5] } };
+            try list.append(allocator, e);
+        }
+
+        // advance to next line
+        while (pos < contents.len and contents[pos] != '\n') pos += 1;
+        if (pos < contents.len and contents[pos] == '\n') pos += 1;
+    }
+
+    // free the C string loaded by raylib
+    c.UnloadFileText(raw);
+
+    return list;
+}
+
+fn runRenderer(edges_slice: []const Edge) void {
+    // initialize window
+    c.InitWindow(800, 600, "Edge Viewer");
+    c.SetTargetFPS(60);
+
+    var camera: c.Camera3D = .{};
+    camera.position = c.Vector3{ .x = 10.0, .y = 10.0, .z = 10.0 };
+    camera.target = c.Vector3{ .x = 0.0, .y = 0.0, .z = 0.0 };
+    camera.up = c.Vector3{ .x = 0.0, .y = 1.0, .z = 0.0 };
+    camera.fovy = 45.0;
+    camera.projection = c.CAMERA_PERSPECTIVE;
+
+    while (!c.WindowShouldClose()) {
+        c.BeginDrawing();
+        c.ClearBackground(c.RAYWHITE);
+
+        c.BeginMode3D(camera);
+        for (edges_slice) |edge| {
+            const a = edge.a;
+            const b = edge.b;
+            const va = c.Vector3{ .x = a.x, .y = a.y, .z = a.z };
+            const vb = c.Vector3{ .x = b.x, .y = b.y, .z = b.z };
+            c.DrawLine3D(va, vb, c.BLACK);
+        }
+        c.EndMode3D();
+
+        c.DrawText("Edge Viewer (ESC to close)", 10, 10, 20, c.DARKGRAY);
+
+        c.EndDrawing();
+    }
+
+    c.CloseWindow();
+}
+
 pub fn main(init: std.process.Init) !void {
     // Prints to stderr, unbuffered, ignoring potential errors.
     std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
 
-    // This is appropriate for anything that lives as long as the process.
     const arena: std.mem.Allocator = init.arena.allocator();
-
-    // Accessing command line arguments:
     const args = try init.minimal.args.toSlice(arena);
-    for (args) |arg| {
-        std.log.info("arg: {s}", .{arg});
+
+    var edges_list: std.ArrayList(Edge) = .empty;
+    var edges_slice: []const Edge = &[_]Edge{}; // will be set below
+
+    if (args.len > 1) {
+        const path = args[1];
+        edges_list = try parseEdges(arena, path);
+        edges_slice = edges_list.items;
+    } else {
+        // no file provided - create a simple sample (a cube wireframe)
+        try edges_list.append(arena, Edge{ .a = Point3{ .x = -1, .y = -1, .z = -1 }, .b = Point3{ .x = 1, .y = -1, .z = -1 } });
+        try edges_list.append(arena, Edge{ .a = Point3{ .x = 1, .y = -1, .z = -1 }, .b = Point3{ .x = 1, .y = 1, .z = -1 } });
+        try edges_list.append(arena, Edge{ .a = Point3{ .x = 1, .y = 1, .z = -1 }, .b = Point3{ .x = -1, .y = 1, .z = -1 } });
+        try edges_list.append(arena, Edge{ .a = Point3{ .x = -1, .y = 1, .z = -1 }, .b = Point3{ .x = -1, .y = -1, .z = -1 } });
+
+        try edges_list.append(arena, Edge{ .a = Point3{ .x = -1, .y = -1, .z = 1 }, .b = Point3{ .x = 1, .y = -1, .z = 1 } });
+        try edges_list.append(arena, Edge{ .a = Point3{ .x = 1, .y = -1, .z = 1 }, .b = Point3{ .x = 1, .y = 1, .z = 1 } });
+        try edges_list.append(arena, Edge{ .a = Point3{ .x = 1, .y = 1, .z = 1 }, .b = Point3{ .x = -1, .y = 1, .z = 1 } });
+        try edges_list.append(arena, Edge{ .a = Point3{ .x = -1, .y = 1, .z = 1 }, .b = Point3{ .x = -1, .y = -1, .z = 1 } });
+
+        try edges_list.append(arena, Edge{ .a = Point3{ .x = -1, .y = -1, .z = -1 }, .b = Point3{ .x = -1, .y = -1, .z = 1 } });
+        try edges_list.append(arena, Edge{ .a = Point3{ .x = 1, .y = -1, .z = -1 }, .b = Point3{ .x = 1, .y = -1, .z = 1 } });
+        try edges_list.append(arena, Edge{ .a = Point3{ .x = 1, .y = 1, .z = -1 }, .b = Point3{ .x = 1, .y = 1, .z = 1 } });
+        try edges_list.append(arena, Edge{ .a = Point3{ .x = -1, .y = 1, .z = -1 }, .b = Point3{ .x = -1, .y = 1, .z = 1 } });
+
+        edges_slice = edges_list.items;
     }
 
-    // In order to do I/O operations need an `Io` instance.
-    const io = init.io;
+    // run the renderer (blocking until window closed)
+    runRenderer(edges_slice);
 
-    // Stdout is for the actual output of your application, for example if you
-    // are implementing gzip, then only the compressed bytes should be sent to
-    // stdout, not any debugging messages.
-    var stdout_buffer: [1024]u8 = undefined;
-    var stdout_file_writer: Io.File.Writer = .init(.stdout(), io, &stdout_buffer);
-    const stdout_writer = &stdout_file_writer.interface;
-
-    try Part_1.printAnotherMessage(stdout_writer);
-
-    try stdout_writer.flush(); // Don't forget to flush!
+    // cleanup
+    edges_list.deinit(arena);
 }
 
 test "simple test" {
