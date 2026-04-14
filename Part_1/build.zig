@@ -18,8 +18,8 @@ pub fn build(b: *std.Build) void {
         },
     });
 
-    // Allow overriding the local raylib location with -Draylib-path=...
-    const raylib_path = b.option([]const u8, "raylib-path", "Path to raylib headers and library") orelse "/home/szp/raylib/raylib/src";
+    const env_raylib_path = b.graph.environ_map.get("RAYLIB_PATH");
+    const raylib_path = b.option([]const u8, "raylib-path", "Path to raylib headers and library") orelse env_raylib_path orelse "/home/szp/raylib/raylib/src";
     root_mod.addIncludePath(.{ .cwd_relative = raylib_path });
     root_mod.addLibraryPath(.{ .cwd_relative = raylib_path });
     root_mod.linkSystemLibrary("raylib", .{ .use_pkg_config = .no, .preferred_link_mode = .static });
