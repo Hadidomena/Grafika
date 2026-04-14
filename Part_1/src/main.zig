@@ -116,12 +116,16 @@ fn runRenderer(edges_slice: []const Edge) void {
     c.CloseWindow();
 }
 
-pub fn main(init: std.process.Init) !void {
+pub fn main() !void {
     // Prints to stderr, unbuffered, ignoring potential errors.
     std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
 
-    const arena: std.mem.Allocator = init.arena.allocator();
-    const args = try init.minimal.args.toSlice(arena);
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const arena = gpa.allocator();
+
+    const args = try std.process.argsAlloc(arena);
+    defer std.process.argsFree(arena, args);
 
     var edges_list: std.ArrayList(Edge) = .empty;
     var edges_slice: []const Edge = &[_]Edge{}; // will be set below
