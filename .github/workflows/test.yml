@@ -16,9 +16,17 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Zig
-        uses: mlugg/setup-zig@v1
-        with:
-          version: master
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          zig_url="$(python3 -c "import json,urllib.request;print(json.load(urllib.request.urlopen('https://ziglang.org/download/index.json'))['master']['x86_64-linux']['tarball'])")"
+
+          curl -L "$zig_url" -o zig.tar.xz
+          tar -xf zig.tar.xz
+          zig_dir="$(tar -tf zig.tar.xz | head -n1 | cut -d/ -f1)"
+          echo "$PWD/$zig_dir" >> "$GITHUB_PATH"
+          "$PWD/$zig_dir/zig" version
 
       - name: Dependencies
         run: |
