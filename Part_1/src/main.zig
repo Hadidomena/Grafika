@@ -156,10 +156,66 @@ fn parseEdges(allocator: std.mem.Allocator, path: []const u8) !std.ArrayList(Edg
     return list;
 }
 
+fn parseBoxes(allocator: std.mem.Allocator, path: []const u8) !std.ArrayList(Edge) {
+    var list: std.ArrayList(Edge) = .empty;
+
+    var path_c = try allocator.alloc(u8, path.len + 1);
+    var pi: usize = 0;
+    while (pi < path.len) : (pi += 1) path_c[pi] = path[pi];
+    path_c[path.len] = 0;
+    const raw = c.LoadFileText(&path_c[0]);
+    if (raw == null) {
+        allocator.free(path_c);
+        return error.FileNotFound;
+    }
+    var len: usize = 0;
+    while (raw[len] != 0) len += 1;
+    const contents = raw[0..len];
+    allocator.free(path_c);
+
+    var pos: usize = 0;
+    while (pos < contents.len) {
+        var nums: [6]f32 = .{ 0, 0, 0, 0, 0, 0 };
+        var count: usize = 0;
+
+        while (pos < contents.len and count < nums.len) {
+            while (pos < contents.len and !isNumberChar(@as(u8, contents[pos]))) pos += 1;
+            if (pos >= contents.len) break;
+            const start = pos;
+            pos += 1;
+            while (pos < contents.len and isNumberChar(@as(u8, contents[pos]))) pos += 1;
+            const tok_len = pos - start;
+            var tmp: [64]u8 = undefined;
+            if (tok_len >= tmp.len) return error.FileNotFound;
+            var ti: usize = 0;
+            while (ti < tok_len) : (ti += 1) tmp[ti] = @as(u8, contents[start + ti]);
+            const tok = tmp[0..tok_len];
+            const val = try std.fmt.parseFloat(f32, tok);
+            nums[count] = val;
+            count += 1;
+        }
+
+        if (count == nums.len) {
+            const p0 = Point3{ .x = nums[0], .y = nums[1], .z = nums[2] };
+            const p1 = Point3{ .x = nums[3], .y = nums[4], .z = nums[5] };
+            const center = Point3{ .x = (p0.x + p1.x) * 0.5, .y = (p0.y + p1.y) * 0.5, .z = (p0.z + p1.z) * 0.5 };
+            const size = Point3{ .x = @abs(p1.x - p0.x), .y = @abs(p1.y - p0.y), .z = @abs(p1.z - p0.z) };
+            try addBoxEdges(&list, allocator, center, size);
+        }
+
+        while (pos < contents.len and contents[pos] != '\n') pos += 1;
+        if (pos < contents.len and contents[pos] == '\n') pos += 1;
+    }
+
+    c.UnloadFileText(raw);
+
+    return list;
+}
+
 fn runRenderer(edges_slice: []const Edge) void {
     const screen_w = 800;
     const screen_h = 600;
-    c.InitWindow(screen_w, screen_h, "Wirtualna Kamera - Wireframe");
+    c.InitWindow(screen_w, screen_h, "Virtual Camera");
     c.SetTargetFPS(60);
     const move_speed: f32 = 0.15;
     const turn_speed: f32 = 0.03;
@@ -268,8 +324,14 @@ pub fn main(init: std.process.Init) !void {
     var edges_slice: []const Edge = &[_]Edge{};
 
     if (args.len > 1) {
-        const path = args[1];
-        edges_list = try parseEdges(arena, path);
+        if (std.mem.startsWith(u8, args[1], "--boxes")) {
+            if (args.len < 3) return error.FileNotFound;
+            const path = args[2];
+            edges_list = try parseBoxes(arena, path);
+        } else {
+            const path = args[1];
+            edges_list = try parseEdges(arena, path);
+        }
         edges_slice = edges_list.items;
     } else {
         const box_size = Point3{ .x = 1.8, .y = 1.8, .z = 1.8 };
