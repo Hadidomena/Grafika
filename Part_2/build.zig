@@ -14,7 +14,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
         .imports = &.{
-            .{ .name = "Part_1", .module = mod },
+            .{ .name = "Part_2", .module = mod },
         },
     });
 
@@ -55,7 +55,7 @@ pub fn build(b: *std.Build) void {
     }
 
     const exe = b.addExecutable(.{
-        .name = "Part_1",
+        .name = "Part_2",
         .root_module = root_mod,
     });
 
