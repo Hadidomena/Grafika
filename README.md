@@ -3,7 +3,7 @@
 This repository contains projects from the Computer Graphics course. The first part (folder `Part_1`) is a small wireframe renderer written in Zig that uses Raylib for windowing and drawing. The program implements a simple virtual camera (position, yaw, pitch) and perspective projection.
 
 ## Requirements
-- Zig (tested with 0.16.0)
+- Zig master (currently tested with both 0.16.0-dev and 0.16.1)
 - C compiler and build tools (for example GCC/Clang on Linux, Visual Studio Build Tools or MSYS2 on Windows)
 - Git
 
