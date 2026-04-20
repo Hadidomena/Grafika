@@ -1,7 +1,5 @@
 const std = @import("std");
 
-const Part_1 = @import("root.zig");
-
 const c = @import("raylib");
 
 const Point3 = struct {
