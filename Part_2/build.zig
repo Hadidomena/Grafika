@@ -9,18 +9,28 @@ pub fn build(b: *std.Build) void {
         .target = target,
     });
 
+    const env_raylib_path = b.graph.environ_map.get("RAYLIB_PATH");
+    const default_raylib_path = if (target.result.os.tag == .windows) "C:\\raylib\\raylib\\src" else "/home/szp/raylib/raylib/src";
+    const raylib_path = b.option([]const u8, "raylib-path", "Path to raylib headers and library") orelse env_raylib_path orelse default_raylib_path;
+
+    const raylib_translate = b.addTranslateC(.{
+        .root_source_file = b.path("src/raylib_import.h"),
+        .target = target,
+        .optimize = optimize,
+    });
+    raylib_translate.addIncludePath(.{ .cwd_relative = raylib_path });
+    const raylib_mod = raylib_translate.createModule();
+
     const root_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
             .{ .name = "Part_2", .module = mod },
+            .{ .name = "raylib", .module = raylib_mod },
         },
     });
 
-    const env_raylib_path = b.graph.environ_map.get("RAYLIB_PATH");
-    const default_raylib_path = if (target.result.os.tag == .windows) "C:\\raylib\\raylib\\src" else "/home/szp/raylib/raylib/src";
-    const raylib_path = b.option([]const u8, "raylib-path", "Path to raylib headers and library") orelse env_raylib_path orelse default_raylib_path;
     root_mod.addIncludePath(.{ .cwd_relative = raylib_path });
     root_mod.addLibraryPath(.{ .cwd_relative = raylib_path });
     root_mod.linkSystemLibrary("raylib", .{ .use_pkg_config = .no, .preferred_link_mode = .static });

@@ -2,9 +2,7 @@ const std = @import("std");
 
 const Part_1 = @import("root.zig");
 
-const c = @cImport({
-    @cInclude("raylib.h");
-});
+const c = @import("raylib");
 
 const Point3 = struct {
     x: f32,
