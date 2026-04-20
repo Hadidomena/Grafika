@@ -60,4 +60,6 @@ jobs:
             ${{ runner.os }}-zig-
 
       - name: Run Tests
-        run: cd Part_1 && zig build test
+        run: 
+          cd Part_1 && zig build test
+          cd Part_2 && zig build test
