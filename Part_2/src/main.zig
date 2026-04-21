@@ -13,6 +13,13 @@ const Edge = struct {
     b: Point3,
 };
 
+const Face = struct {
+    a: Point3,
+    b: Point3,
+    c: Point3,
+    d: Point3,
+};
+
 const CameraState = struct {
     pos: Point3,
     yaw: f32,
@@ -25,6 +32,21 @@ const ProjectedPoint = struct {
     y: i32,
     visible: bool,
 };
+
+const FaceRaster = struct {
+    p1: ProjectedPoint,
+    p2: ProjectedPoint,
+    p3: ProjectedPoint,
+    p4: ProjectedPoint,
+    depth: f32,
+};
+
+fn toVector2(p: ProjectedPoint) c.Vector2 {
+    return .{
+        .x = @as(f32, @floatFromInt(p.x)),
+        .y = @as(f32, @floatFromInt(p.y)),
+    };
+}
 
 fn worldToCamera(p: Point3, cam: CameraState) Point3 {
     const dx = p.x - cam.pos.x;
@@ -95,6 +117,35 @@ fn addBoxEdges(list: *std.ArrayList(Edge), allocator: std.mem.Allocator, center:
     try list.append(allocator, .{ .a = p3, .b = p7 });
 }
 
+fn addBoxFaces(list: *std.ArrayList(Face), allocator: std.mem.Allocator, center: Point3, size: Point3) !void {
+    const hx = size.x * 0.5;
+    const hy = size.y * 0.5;
+    const hz = size.z * 0.5;
+
+    const p0 = Point3{ .x = center.x - hx, .y = center.y - hy, .z = center.z - hz };
+    const p1 = Point3{ .x = center.x + hx, .y = center.y - hy, .z = center.z - hz };
+    const p2 = Point3{ .x = center.x + hx, .y = center.y + hy, .z = center.z - hz };
+    const p3 = Point3{ .x = center.x - hx, .y = center.y + hy, .z = center.z - hz };
+
+    const p4 = Point3{ .x = center.x - hx, .y = center.y - hy, .z = center.z + hz };
+    const p5 = Point3{ .x = center.x + hx, .y = center.y - hy, .z = center.z + hz };
+    const p6 = Point3{ .x = center.x + hx, .y = center.y + hy, .z = center.z + hz };
+    const p7 = Point3{ .x = center.x - hx, .y = center.y + hy, .z = center.z + hz };
+
+    // front
+    try list.append(allocator, .{ .a = p0, .b = p1, .c = p2, .d = p3 });
+    // back
+    try list.append(allocator, .{ .a = p5, .b = p4, .c = p7, .d = p6 });
+    // top
+    try list.append(allocator, .{ .a = p3, .b = p2, .c = p6, .d = p7 });
+    // bottom
+    try list.append(allocator, .{ .a = p4, .b = p5, .c = p1, .d = p0 });
+    // left
+    try list.append(allocator, .{ .a = p4, .b = p0, .c = p3, .d = p7 });
+    // right
+    try list.append(allocator, .{ .a = p1, .b = p5, .c = p6, .d = p2 });
+}
+
 fn isNumberChar(ch: u8) bool {
     return (ch >= '0' and ch <= '9') or ch == '-' or ch == '+' or ch == '.' or ch == 'e' or ch == 'E';
 }
@@ -152,8 +203,8 @@ fn parseEdges(allocator: std.mem.Allocator, path: []const u8) !std.ArrayList(Edg
     return list;
 }
 
-fn parseBoxes(allocator: std.mem.Allocator, path: []const u8) !std.ArrayList(Edge) {
-    var list: std.ArrayList(Edge) = .empty;
+fn parseBoxes(allocator: std.mem.Allocator, path: []const u8) !std.ArrayList(Face) {
+    var list: std.ArrayList(Face) = .empty;
 
     var path_c = try allocator.alloc(u8, path.len + 1);
     var pi: usize = 0;
@@ -196,7 +247,7 @@ fn parseBoxes(allocator: std.mem.Allocator, path: []const u8) !std.ArrayList(Edg
             const p1 = Point3{ .x = nums[3], .y = nums[4], .z = nums[5] };
             const center = Point3{ .x = (p0.x + p1.x) * 0.5, .y = (p0.y + p1.y) * 0.5, .z = (p0.z + p1.z) * 0.5 };
             const size = Point3{ .x = @abs(p1.x - p0.x), .y = @abs(p1.y - p0.y), .z = @abs(p1.z - p0.z) };
-            try addBoxEdges(&list, allocator, center, size);
+            try addBoxFaces(&list, allocator, center, size);
         }
 
         while (pos < contents.len and contents[pos] != '\n') pos += 1;
@@ -312,36 +363,194 @@ fn runRenderer(edges_slice: []const Edge) void {
     c.CloseWindow();
 }
 
+fn runRendererFaces(faces_slice: []const Face) void {
+    const screen_w = 800;
+    const screen_h = 600;
+    c.InitWindow(screen_w, screen_h, "Virtual Camera");
+    c.SetTargetFPS(60);
+    const move_speed: f32 = 0.15;
+    const turn_speed: f32 = 0.03;
+    const focal_speed: f32 = 3.5;
+
+    var camera = CameraState{
+        .pos = Point3{ .x = 0.0, .y = 0.0, .z = -8.0 },
+        .yaw = 0.0,
+        .pitch = 0.0,
+        .focal = 520.0,
+    };
+
+    var draw_faces: std.ArrayList(FaceRaster) = .empty;
+    defer draw_faces.deinit(std.heap.page_allocator);
+    draw_faces.ensureTotalCapacity(std.heap.page_allocator, faces_slice.len) catch {};
+
+    while (!c.WindowShouldClose()) {
+        if (c.IsKeyDown(c.KEY_LEFT)) {
+            camera.yaw -= turn_speed;
+        }
+        if (c.IsKeyDown(c.KEY_RIGHT)) {
+            camera.yaw += turn_speed;
+        }
+
+        const forward_x = @sin(camera.yaw);
+        const forward_z = @cos(camera.yaw);
+        const right_x = @cos(camera.yaw);
+        const right_z = -@sin(camera.yaw);
+
+        if (c.IsKeyDown(c.KEY_W)) {
+            camera.pos.x += forward_x * move_speed;
+            camera.pos.z += forward_z * move_speed;
+        }
+        if (c.IsKeyDown(c.KEY_S)) {
+            camera.pos.x -= forward_x * move_speed;
+            camera.pos.z -= forward_z * move_speed;
+        }
+        if (c.IsKeyDown(c.KEY_A)) {
+            camera.pos.x -= right_x * move_speed;
+            camera.pos.z -= right_z * move_speed;
+        }
+        if (c.IsKeyDown(c.KEY_D)) {
+            camera.pos.x += right_x * move_speed;
+            camera.pos.z += right_z * move_speed;
+        }
+        if (c.IsKeyDown(c.KEY_Q)) {
+            camera.pos.y += move_speed;
+        }
+        if (c.IsKeyDown(c.KEY_E)) {
+            camera.pos.y -= move_speed;
+        }
+        if (c.IsKeyDown(c.KEY_UP)) {
+            camera.pitch += turn_speed;
+        }
+        if (c.IsKeyDown(c.KEY_DOWN)) {
+            camera.pitch -= turn_speed;
+        }
+
+        const max_pitch: f32 = 1.4;
+        if (camera.pitch > max_pitch) camera.pitch = max_pitch;
+        if (camera.pitch < -max_pitch) camera.pitch = -max_pitch;
+
+        if (c.IsKeyDown(c.KEY_Z)) {
+            camera.focal -= focal_speed;
+        }
+        if (c.IsKeyDown(c.KEY_X)) {
+            camera.focal += focal_speed;
+        }
+        if (camera.focal < 80.0) {
+            camera.focal = 80.0;
+        }
+        if (camera.focal > 1200.0) {
+            camera.focal = 1200.0;
+        }
+
+        c.BeginDrawing();
+        c.ClearBackground(c.RAYWHITE);
+
+        draw_faces.clearRetainingCapacity();
+
+        for (faces_slice) |face| {
+            const a_cam = worldToCamera(face.a, camera);
+            const b_cam = worldToCamera(face.b, camera);
+            const c_cam = worldToCamera(face.c, camera);
+            const d_cam = worldToCamera(face.d, camera);
+
+            const pa = projectPoint(a_cam, screen_w, screen_h, camera.focal);
+            const pb = projectPoint(b_cam, screen_w, screen_h, camera.focal);
+            const pc = projectPoint(c_cam, screen_w, screen_h, camera.focal);
+            const pd = projectPoint(d_cam, screen_w, screen_h, camera.focal);
+
+            if (pa.visible and pb.visible and pc.visible and pd.visible) {
+                const depth = (a_cam.z + b_cam.z + c_cam.z + d_cam.z) * 0.25;
+                draw_faces.append(std.heap.page_allocator, .{
+                    .p1 = pa,
+                    .p2 = pb,
+                    .p3 = pc,
+                    .p4 = pd,
+                    .depth = depth,
+                }) catch continue;
+            }
+        }
+        
+        var i: usize = 1;
+        while (i < draw_faces.items.len) : (i += 1) {
+            var j = i;
+            while (j > 0 and draw_faces.items[j - 1].depth < draw_faces.items[j].depth) : (j -= 1) {
+                const tmp = draw_faces.items[j - 1];
+                draw_faces.items[j - 1] = draw_faces.items[j];
+                draw_faces.items[j] = tmp;
+            }
+        }
+
+        for (draw_faces.items) |rf| {
+            const v1 = toVector2(rf.p1);
+            const v2 = toVector2(rf.p2);
+            const v3 = toVector2(rf.p3);
+            const v4 = toVector2(rf.p4);
+
+            c.DrawTriangle(v1, v2, v3, c.LIGHTGRAY);
+            c.DrawTriangle(v1, v3, v4, c.LIGHTGRAY);
+
+            c.DrawLine(rf.p1.x, rf.p1.y, rf.p2.x, rf.p2.y, c.BLACK);
+            c.DrawLine(rf.p2.x, rf.p2.y, rf.p3.x, rf.p3.y, c.BLACK);
+            c.DrawLine(rf.p3.x, rf.p3.y, rf.p4.x, rf.p4.y, c.BLACK);
+            c.DrawLine(rf.p4.x, rf.p4.y, rf.p1.x, rf.p1.y, c.BLACK);
+        }
+
+        c.DrawText("Movement: W/S front/back, A/D right/left, arrowkeys to steer camera, Z/X focal", 10, 10, 16, c.DARKGRAY);
+        var info_buf: [128]u8 = undefined;
+        const info = std.fmt.bufPrintZ(
+            &info_buf,
+            "Cam: ({d:.2}, {d:.2}, {d:.2}) yaw:{d:.2} pitch:{d:.2} f:{d:.1}",
+            .{ camera.pos.x, camera.pos.y, camera.pos.z, camera.yaw, camera.pitch, camera.focal },
+        ) catch null;
+        if (info) |text| c.DrawText(text, 10, 34, 16, c.GRAY);
+
+        c.EndDrawing();
+    }
+
+    c.CloseWindow();
+}
+
 pub fn main(init: std.process.Init) !void {
     const arena = init.arena.allocator();
     const args = try init.minimal.args.toSlice(arena);
 
     var edges_list: std.ArrayList(Edge) = .empty;
+    var faces_list: std.ArrayList(Face) = .empty;
     var edges_slice: []const Edge = &[_]Edge{};
+    var faces_slice: []const Face = &[_]Face{};
+    var use_faces: bool = false;
 
     if (args.len > 1) {
         if (std.mem.startsWith(u8, args[1], "--boxes")) {
             if (args.len < 3) return error.FileNotFound;
             const path = args[2];
-            edges_list = try parseBoxes(arena, path);
+            faces_list = try parseBoxes(arena, path);
+            faces_slice = faces_list.items;
+            use_faces = true;
         } else {
             const path = args[1];
             edges_list = try parseEdges(arena, path);
+            edges_slice = edges_list.items;
+            use_faces = false;
         }
-        edges_slice = edges_list.items;
     } else {
         const box_size = Point3{ .x = 1.8, .y = 1.8, .z = 1.8 };
-        try addBoxEdges(&edges_list, arena, Point3{ .x = -3.2, .y = 0.0, .z = 0.0 }, box_size);
-        try addBoxEdges(&edges_list, arena, Point3{ .x = 3.2, .y = 0.0, .z = 0.0 }, box_size);
-        try addBoxEdges(&edges_list, arena, Point3{ .x = 0.0, .y = 0.0, .z = -3.2 }, box_size);
-        try addBoxEdges(&edges_list, arena, Point3{ .x = 0.0, .y = 0.0, .z = 3.2 }, box_size);
+        try addBoxFaces(&faces_list, arena, Point3{ .x = -3.2, .y = 0.0, .z = 0.0 }, box_size);
+        try addBoxFaces(&faces_list, arena, Point3{ .x = 3.2, .y = 0.0, .z = 0.0 }, box_size);
+        try addBoxFaces(&faces_list, arena, Point3{ .x = 0.0, .y = 0.0, .z = -3.2 }, box_size);
+        try addBoxFaces(&faces_list, arena, Point3{ .x = 0.0, .y = 0.0, .z = 3.2 }, box_size);
 
-        edges_slice = edges_list.items;
+        faces_slice = faces_list.items;
+        use_faces = true;
     }
 
-    runRenderer(edges_slice);
-
-    edges_list.deinit(arena);
+    if (use_faces) {
+        runRendererFaces(faces_slice);
+        faces_list.deinit(arena);
+    } else {
+        runRenderer(edges_slice);
+        edges_list.deinit(arena);
+    }
 }
 
 test "raylib integration - gen image (CPU)" {
