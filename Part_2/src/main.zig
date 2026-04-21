@@ -38,14 +38,127 @@ const FaceRaster = struct {
     p2: ProjectedPoint,
     p3: ProjectedPoint,
     p4: ProjectedPoint,
-    depth: f32,
+    z1: f32,
+    z2: f32,
+    z3: f32,
+    z4: f32,
 };
 
-fn toVector2(p: ProjectedPoint) c.Vector2 {
-    return .{
-        .x = @as(f32, @floatFromInt(p.x)),
-        .y = @as(f32, @floatFromInt(p.y)),
-    };
+fn edgeFunction(ax: f32, ay: f32, bx: f32, by: f32, px: f32, py: f32) f32 {
+    return (px - ax) * (by - ay) - (py - ay) * (bx - ax);
+}
+
+fn rasterizeTriangleDepth(
+    p0: ProjectedPoint,
+    z0: f32,
+    p1: ProjectedPoint,
+    z1: f32,
+    p2: ProjectedPoint,
+    z2: f32,
+    screen_w: i32,
+    screen_h: i32,
+    depth_buffer: []f32,
+    color: c.Color,
+) void {
+    const x0 = @as(f32, @floatFromInt(p0.x));
+    const y0 = @as(f32, @floatFromInt(p0.y));
+    const x1 = @as(f32, @floatFromInt(p1.x));
+    const y1 = @as(f32, @floatFromInt(p1.y));
+    const x2 = @as(f32, @floatFromInt(p2.x));
+    const y2 = @as(f32, @floatFromInt(p2.y));
+
+    const area = edgeFunction(x0, y0, x1, y1, x2, y2);
+    if (@abs(area) < 0.000001) return;
+
+    const min_x = @max(0, @min(@min(p0.x, p1.x), p2.x));
+    const max_x = @min(screen_w - 1, @max(@max(p0.x, p1.x), p2.x));
+    const min_y = @max(0, @min(@min(p0.y, p1.y), p2.y));
+    const max_y = @min(screen_h - 1, @max(@max(p0.y, p1.y), p2.y));
+    if (max_x < min_x or max_y < min_y) return;
+
+    const inv_area = 1.0 / area;
+    const width_usize: usize = @intCast(screen_w);
+
+    var y = min_y;
+    while (y <= max_y) : (y += 1) {
+        var x = min_x;
+        while (x <= max_x) : (x += 1) {
+            const px = @as(f32, @floatFromInt(x)) + 0.5;
+            const py = @as(f32, @floatFromInt(y)) + 0.5;
+
+            const w0 = edgeFunction(x1, y1, x2, y2, px, py);
+            const w1 = edgeFunction(x2, y2, x0, y0, px, py);
+            const w2 = edgeFunction(x0, y0, x1, y1, px, py);
+
+            const inside = if (area > 0.0)
+                (w0 >= 0.0 and w1 >= 0.0 and w2 >= 0.0)
+            else
+                (w0 <= 0.0 and w1 <= 0.0 and w2 <= 0.0);
+            if (!inside) continue;
+
+            const b0 = w0 * inv_area;
+            const b1 = w1 * inv_area;
+            const b2 = w2 * inv_area;
+            const z = b0 * z0 + b1 * z1 + b2 * z2;
+
+            const yi: usize = @intCast(y);
+            const xi: usize = @intCast(x);
+            const idx = yi * width_usize + xi;
+            if (z < depth_buffer[idx]) {
+                depth_buffer[idx] = z;
+                c.DrawPixel(x, y, color);
+            }
+        }
+    }
+}
+
+fn drawLineDepthTest(
+    p0: ProjectedPoint,
+    z0: f32,
+    p1: ProjectedPoint,
+    z1: f32,
+    screen_w: i32,
+    screen_h: i32,
+    depth_buffer: []const f32,
+    color: c.Color,
+) void {
+    const dx = p1.x - p0.x;
+    const dy = p1.y - p0.y;
+    const adx = if (dx < 0) -dx else dx;
+    const ady = if (dy < 0) -dy else dy;
+    const steps = if (adx > ady) adx else ady;
+
+    const width_usize: usize = @intCast(screen_w);
+
+    if (steps == 0) {
+        if (p0.x < 0 or p0.x >= screen_w or p0.y < 0 or p0.y >= screen_h) return;
+        const xi: usize = @intCast(p0.x);
+        const yi: usize = @intCast(p0.y);
+        const idx = yi * width_usize + xi;
+        if (z0 <= depth_buffer[idx] + 0.001) {
+            c.DrawPixel(p0.x, p0.y, color);
+        }
+        return;
+    }
+
+    var i: i32 = 0;
+    while (i <= steps) : (i += 1) {
+        const t = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(steps));
+        const xf = @as(f32, @floatFromInt(p0.x)) + @as(f32, @floatFromInt(dx)) * t;
+        const yf = @as(f32, @floatFromInt(p0.y)) + @as(f32, @floatFromInt(dy)) * t;
+
+        const x: i32 = @intFromFloat(@round(xf));
+        const y: i32 = @intFromFloat(@round(yf));
+        if (x < 0 or x >= screen_w or y < 0 or y >= screen_h) continue;
+
+        const z = z0 + (z1 - z0) * t;
+        const xi: usize = @intCast(x);
+        const yi: usize = @intCast(y);
+        const idx = yi * width_usize + xi;
+        if (z <= depth_buffer[idx] + 0.001) {
+            c.DrawPixel(x, y, color);
+        }
+    }
 }
 
 fn worldToCamera(p: Point3, cam: CameraState) Point3 {
@@ -383,6 +496,10 @@ fn runRendererFaces(faces_slice: []const Face) void {
     defer draw_faces.deinit(std.heap.page_allocator);
     draw_faces.ensureTotalCapacity(std.heap.page_allocator, faces_slice.len) catch {};
 
+    const pixel_count = @as(usize, @intCast(screen_w)) * @as(usize, @intCast(screen_h));
+    const depth_buffer = std.heap.page_allocator.alloc(f32, pixel_count) catch return;
+    defer std.heap.page_allocator.free(depth_buffer);
+
     while (!c.WindowShouldClose()) {
         if (c.IsKeyDown(c.KEY_LEFT)) {
             camera.yaw -= turn_speed;
@@ -446,6 +563,7 @@ fn runRendererFaces(faces_slice: []const Face) void {
         c.ClearBackground(c.RAYWHITE);
 
         draw_faces.clearRetainingCapacity();
+        @memset(depth_buffer, std.math.inf(f32));
 
         for (faces_slice) |face| {
             const a_cam = worldToCamera(face.a, camera);
@@ -459,40 +577,35 @@ fn runRendererFaces(faces_slice: []const Face) void {
             const pd = projectPoint(d_cam, screen_w, screen_h, camera.focal);
 
             if (pa.visible and pb.visible and pc.visible and pd.visible) {
-                const depth = (a_cam.z + b_cam.z + c_cam.z + d_cam.z) * 0.25;
+                const min_x = @min(@min(pa.x, pb.x), @min(pc.x, pd.x));
+                const max_x = @max(@max(pa.x, pb.x), @max(pc.x, pd.x));
+                const min_y = @min(@min(pa.y, pb.y), @min(pc.y, pd.y));
+                const max_y = @max(@max(pa.y, pb.y), @max(pc.y, pd.y));
+                if (max_x < 0 or min_x >= screen_w or max_y < 0 or min_y >= screen_h) continue;
+
                 draw_faces.append(std.heap.page_allocator, .{
                     .p1 = pa,
                     .p2 = pb,
                     .p3 = pc,
                     .p4 = pd,
-                    .depth = depth,
+                    .z1 = a_cam.z,
+                    .z2 = b_cam.z,
+                    .z3 = c_cam.z,
+                    .z4 = d_cam.z,
                 }) catch continue;
-            }
-        }
-        
-        var i: usize = 1;
-        while (i < draw_faces.items.len) : (i += 1) {
-            var j = i;
-            while (j > 0 and draw_faces.items[j - 1].depth < draw_faces.items[j].depth) : (j -= 1) {
-                const tmp = draw_faces.items[j - 1];
-                draw_faces.items[j - 1] = draw_faces.items[j];
-                draw_faces.items[j] = tmp;
             }
         }
 
         for (draw_faces.items) |rf| {
-            const v1 = toVector2(rf.p1);
-            const v2 = toVector2(rf.p2);
-            const v3 = toVector2(rf.p3);
-            const v4 = toVector2(rf.p4);
+            rasterizeTriangleDepth(rf.p1, rf.z1, rf.p2, rf.z2, rf.p3, rf.z3, screen_w, screen_h, depth_buffer, c.LIGHTGRAY);
+            rasterizeTriangleDepth(rf.p1, rf.z1, rf.p3, rf.z3, rf.p4, rf.z4, screen_w, screen_h, depth_buffer, c.LIGHTGRAY);
+        }
 
-            c.DrawTriangle(v1, v2, v3, c.LIGHTGRAY);
-            c.DrawTriangle(v1, v3, v4, c.LIGHTGRAY);
-
-            c.DrawLine(rf.p1.x, rf.p1.y, rf.p2.x, rf.p2.y, c.BLACK);
-            c.DrawLine(rf.p2.x, rf.p2.y, rf.p3.x, rf.p3.y, c.BLACK);
-            c.DrawLine(rf.p3.x, rf.p3.y, rf.p4.x, rf.p4.y, c.BLACK);
-            c.DrawLine(rf.p4.x, rf.p4.y, rf.p1.x, rf.p1.y, c.BLACK);
+        for (draw_faces.items) |rf| {
+            drawLineDepthTest(rf.p1, rf.z1, rf.p2, rf.z2, screen_w, screen_h, depth_buffer, c.BLACK);
+            drawLineDepthTest(rf.p2, rf.z2, rf.p3, rf.z3, screen_w, screen_h, depth_buffer, c.BLACK);
+            drawLineDepthTest(rf.p3, rf.z3, rf.p4, rf.z4, screen_w, screen_h, depth_buffer, c.BLACK);
+            drawLineDepthTest(rf.p4, rf.z4, rf.p1, rf.z1, screen_w, screen_h, depth_buffer, c.BLACK);
         }
 
         c.DrawText("Movement: W/S front/back, A/D right/left, arrowkeys to steer camera, Z/X focal", 10, 10, 16, c.DARKGRAY);
