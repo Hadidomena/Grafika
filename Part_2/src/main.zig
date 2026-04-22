@@ -18,7 +18,8 @@ const Px = struct { x: i32, y: i32 };
 
 const DrawFace = struct {
     p: [4]Px,
-    depth: f32,
+    z_far: f32,
+    z_near: f32,
 };
 
 const CulledFace = struct {
@@ -158,14 +159,21 @@ fn parseBoxFile(alloc: std.mem.Allocator, path: []const u8) !std.ArrayList(Face)
     return list;
 }
 
-// Painter sort (insertion sort, descending centroid)
+// Painter sort (insertion sort, far-to-near)
 
-fn sortDesc(faces: []DrawFace) void {
+fn painterComesAfter(a: DrawFace, b: DrawFace) bool {
+    const eps: f32 = 0.00001;
+    if (@abs(a.z_far - b.z_far) > eps) return a.z_far < b.z_far;
+    if (@abs(a.z_near - b.z_near) > eps) return a.z_near < b.z_near;
+    return false;
+}
+
+fn sortPainter(faces: []DrawFace) void {
     var i: usize = 1;
     while (i < faces.len) : (i += 1) {
         const key = faces[i];
         var j = i;
-        while (j > 0 and faces[j - 1].depth < key.depth) : (j -= 1) {
+        while (j > 0 and painterComesAfter(faces[j - 1], key)) : (j -= 1) {
             faces[j] = faces[j - 1];
         }
         faces[j] = key;
@@ -286,6 +294,8 @@ pub fn main(init: std.process.Init) !void {
                 .y = (ac.y + bc.y + cc.y + dc.y) * 0.25,
                 .z = (ac.z + bc.z + cc.z + dc.z) * 0.25,
             };
+            const z_far = @max(@max(ac.z, bc.z), @max(cc.z, dc.z));
+            const z_near = @min(@min(ac.z, bc.z), @min(cc.z, dc.z));
             if (dot(normal, ctr) >= 0) {
                 n_backface += 1;
                 if (debug_mode) {
@@ -316,10 +326,10 @@ pub fn main(init: std.process.Init) !void {
                 continue;
             }
 
-            draw_buf.append(alloc, .{ .p = .{ pa, pb, pc, pd }, .depth = ctr.z }) catch continue;
+            draw_buf.append(alloc, .{ .p = .{ pa, pb, pc, pd }, .z_far = z_far, .z_near = z_near }) catch continue;
         }
 
-        sortDesc(draw_buf.items);
+        sortPainter(draw_buf.items);
 
         c.BeginDrawing();
         c.ClearBackground(c.RAYWHITE);
